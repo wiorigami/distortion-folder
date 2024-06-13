@@ -1,13 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Sequence-Folder</title>
+    <title>Flat-Distorter</title>
 </head>
+
 <body style="background:darkgray">
     <div>
         <span style="font-family:sans-serif">
-            <b>Sequence-Folder&nbsp;&nbsp;</b>
+            <b>Flat-Distorter&nbsp;&nbsp;</b>
         </span>
         <input type="button" id="prev" value="<">
         <input type="button" id="next" value=">">
@@ -15,16 +17,24 @@
         <input type="checkbox" id="flip">
         <label for="shadow">Shadows</label>
         <input id="shadow" type="number" min="0" max="6" step="1">
-        <input type="file" id="import"/>
+        <input type="file" id="import" />
+        <input type="color" id="topcolor" value="#AAAAAA">
+        <input type="color" id="bottomcolor" value="#FFFFFF">
     </div>
     <div>
+        <div>Distortion</div>
+        <input type="range" id="scale" min="0" max="1" value="0.5" step="0.00001" style="width: 700px;" />
+        <label for="scale">Scale</label>
+        <input type="range" id="rotat" min="0" max="1" value="0.5" step="0.00001" style="width: 700px;" />
+        <label for="rotat">Rotation</label>
         <svg id="main">
             <svg id="input"></svg>
             <svg id="cp"></svg>
             <svg id="output"></svg>
         </svg>
     </div>
-    <div>© Jason S. Ku 2024</div>
+    <div>© Jason S. Ku 2024 mod by Kei Morisue</div>
     <script type="module" src="./src/main.js"></script>
 </body>
+
 </html>

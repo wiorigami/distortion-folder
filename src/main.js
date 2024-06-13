@@ -5,7 +5,7 @@ import { IO } from "./flatfolder/io.js";
 import { X } from "./flatfolder/conversion.js";
 import { SOLVER } from "./flatfolder/solver.js";
 import { CON } from "./flatfolder/constraints.js";
-
+import { DIST } from "./distortion.js";
 window.onload = () => { MAIN.startup(); };  // entry point
 
 const MAIN = {
@@ -25,6 +25,10 @@ const MAIN = {
             "lightsalmon", "powderblue", "lavender", "sandybrown"
         ],
     },
+    distortion: {
+        scale: 1,
+        rotation: 0,
+    },
     startup: () => {
         CON.build();
         NOTE.clear_log();
@@ -35,7 +39,7 @@ const MAIN = {
         for (const [k, v] of Object.entries({
             xmlns: SVG.NS,
             style: "background: lightgray",
-            viewBox: [0, 0, 3*s, s].join(" "),
+            viewBox: [0, 0, 3 * s, s].join(" "),
         })) {
             main.setAttribute(k, v);
         }
@@ -46,9 +50,9 @@ const MAIN = {
                 xmlns: SVG.NS,
                 height: s,
                 width: s,
-                x: i*s,
+                x: i * s,
                 y: 0,
-                viewBox: [-b, -b, s + 2*b, s + 2*b].join(" "),
+                viewBox: [-b, -b, s + 2 * b, s + 2 * b].join(" "),
             })) {
                 svg.setAttribute(k, v);
             }
@@ -94,6 +98,25 @@ const MAIN = {
         document.getElementById("shadow").onchange = () => {
             MAIN.draw_frame(FILE);
         };
+        document.getElementById("topcolor").onchange = () => {
+            MAIN.color.face.top = document.getElementById("topcolor").value
+            MAIN.draw_frame(FILE);
+        };
+        document.getElementById("bottomcolor").onchange = () => {
+            MAIN.color.face.bottom = document.getElementById("bottomcolor").value
+            MAIN.draw_frame(FILE);
+        };
+        document.getElementById("scale").onchange = () => {
+            const value = document.getElementById("scale").value
+            MAIN.distortion.scale = 1 + (value - 0.5) * 0.2
+            MAIN.draw_frame(FILE);
+        };
+        document.getElementById("rotat").onchange = () => {
+            const value = document.getElementById("rotat").value
+            MAIN.distortion.rotation = (value - 0.5) * 0.2 * Math.PI
+            MAIN.draw_frame(FILE);
+        };
+
         // console.log(FILE);
     },
     get_frame: (FILE, i) => {
@@ -106,11 +129,7 @@ const MAIN = {
         FOLD.FO = frame.faceOrders;
         FOLD.line = frame["lf:line"];
         FOLD.points = frame["lf:points"];
-        const edges = FOLD.FO.map(([f1, f2, o]) => {
-            return M.encode(((FOLD.Ff[f2] ? 1 : -1)*o >= 0) ? [f1, f2] : [f2, f1]);
-        });
-        CELL.CD = X.CF_edges_2_CD(CELL.CF, edges);
-        FOLD.EA = MAIN.EF_Ff_edges_2_EA(FOLD.EF, FOLD.Ff, edges);
+        MAIN.putCD(FOLD, CELL);
         FOLD.Vf = X.V_FV_EV_EA_2_Vf_Ff(FOLD.V, FOLD.FV, FOLD.EV, FOLD.EA)[0];
         if (M.polygon_area2(M.expand(FOLD.FV[0], FOLD.Vf)) < 0) {
             FOLD.Vf = FOLD.Vf.map(v => M.add(M.refY(v), [0, 1]));
@@ -129,7 +148,26 @@ const MAIN = {
             const out = SVG.clear("output");
             const [F2, C2] = MAIN.get_frame(FILE, FILE.i + 1);
             MAIN.draw_cp(SVG.clear("cp"), F2);
-            MAIN.draw_state(out, F2, C2);
+
+
+
+
+            const s = MAIN.distortion.scale
+            const t = MAIN.distortion.rotation
+            const co = Math.cos(t)
+            const si = Math.sin(t)
+            const T = { A: [[s * co, -si * s], [s * si, s * co]], b: [0, 0] }
+            const { V, FV, Vf } = F2
+            const VD = Vf.map((vf, i) => { return M.add(V[i], M.sub(DIST.affine(vf, T), vf)) });
+            const [FOLD_D, CELL_D] = MAIN.V_FV_2_FOLD_CELL(VD, FV)
+
+            FOLD_D.FO = F2.FO;
+            MAIN.putCD(FOLD_D, CELL_D);
+            MAIN.draw_state(out, FOLD_D, CELL_D);
+
+
+
+
             MAIN.draw_state(SVG.clear("input"), F1, C1, F2);
         } else {
             MAIN.draw_state(SVG.clear("input"), F1, C1);
@@ -148,7 +186,7 @@ const MAIN = {
     },
     draw_cp: (svg, F, bold = true) => {
         // console.log(F);
-        const {V, Vf, FV, EV, EF, EA, Ff, FO, FL} = F;
+        const { V, Vf, FV, EV, EF, EA, Ff, FO, FL } = F;
         const faces = FV.map(F => M.expand(F, Vf));
         const lines = EV.map(E => M.expand(E, Vf));
         const colors = EA.map(a => {
@@ -157,23 +195,25 @@ const MAIN = {
             if (a == "V") { return "red"; }
             if (a == "F") { return "gray"; }
         });
-        const g1 = SVG.append("g", svg, {id: "flat_f"});
-        const g2 = SVG.append("g", svg, {id: "flat_e"});
-        const g3 = SVG.append("g", svg, {id: "flat_p"});
+        const g1 = SVG.append("g", svg, { id: "flat_f" });
+        const g2 = SVG.append("g", svg, { id: "flat_e" });
+        const g3 = SVG.append("g", svg, { id: "flat_p" });
         if ((FL == undefined) || !bold) {
-            SVG.draw_segments(g2, lines, {stroke: colors, id: true});
-            SVG.draw_polygons(g1, faces, {fill: "white", id: true});
+            SVG.draw_segments(g2, lines, { stroke: colors, id: true });
+            SVG.draw_polygons(g1, faces, { fill: "white", id: true });
         } else {
             const Fc = FL.map(i => (i < 0) ? "white" : (
                 MAIN.color.rand[i % MAIN.color.rand.length]));
-            SVG.draw_polygons(g1, faces, {fill: Fc, id: true});
-            SVG.draw_segments(g2, lines, {stroke: colors, id: true, stroke_width: 1,
+            SVG.draw_polygons(g1, faces, { fill: Fc, id: true });
+            SVG.draw_segments(g2, lines, {
+                stroke: colors, id: true, stroke_width: 1,
                 filter: (i) => {
                     const [f, g] = EF[i];
                     return (g == undefined) || (FL[f] == FL[g]);
                 },
             });
-            SVG.draw_segments(g2, lines, {stroke: colors, id: true, stroke_width: 5,
+            SVG.draw_segments(g2, lines, {
+                stroke: colors, id: true, stroke_width: 5,
                 filter: (i) => {
                     const [f, g] = EF[i];
                     return (g != undefined) && (FL[f] != FL[g]);
@@ -183,8 +223,8 @@ const MAIN = {
         // SVG.draw_points(g3, Vf, {text: true, fill: "green"});
     },
     draw_state: (svg, FOLD, CELL, F2) => {
-        const {Ff, EF, FO} = FOLD;
-        const {P, CP, CD, SP, SC, SE} = CELL;
+        const { Ff, EF, FO } = FOLD;
+        const { P, CP, CD, SP, SC, SE } = CELL;
         const flip = document.getElementById("flip").checked;
         const m = [0.5, 0.5];
         const Q = M.normalize_points(
@@ -200,22 +240,25 @@ const MAIN = {
         const regions = RP.map(V => M.expand(V, Q));
         const G = {};
         for (const id of ["c", "shadow", "s_crease", "s_edge"]) {
-            G[id] = SVG.append("g", svg, {id: `${svg.id}_${id}`});
+            G[id] = SVG.append("g", svg, { id: `${svg.id}_${id}` });
         }
         SVG.draw_polygons(G.c, regions, {
-            id: true, fill: Rcolor, stroke: "none"});
+            id: true, fill: Rcolor, stroke: "none"
+        });
         const n = +document.getElementById("shadow").value;
         if (n > 0) { SVG.draw_shadows(G.shadow, RP, Rf, Q, SP, SD, flip, n); }
         const lines = SP.map((ps) => M.expand(ps, Q));
         SVG.draw_segments(G.s_crease, lines, {
             id: true, stroke: MAIN.color.edge.F,
-            filter: (i) => SD[i][0] == "C"});
+            filter: (i) => SD[i][0] == "C"
+        });
         SVG.draw_segments(G.s_edge, lines, {
             id: true, stroke: MAIN.color.edge.B,
-            filter: (i) => SD[i][0] == "B"});
+            filter: (i) => SD[i][0] == "B"
+        });
         if ((F2 != undefined) && (F2.points != undefined)) {
             const line = [MAIN.line_2_coords(F2.line).map(
-                p => flip ? M.add(M.refX(M.sub(p, m)), m): p
+                p => flip ? M.add(M.refX(M.sub(p, m)), m) : p
             )];
             SVG.draw_segments(G.s_edge, line, {
                 id: true, stroke: "purple", stroke_width: 5,
@@ -247,8 +290,7 @@ const MAIN = {
         const [EF, FE] = X.EV_FV_2_EF_FE(EV, FV);
         const L = EV.map(vs => vs.map(i => V[i]));
         const eps = M.min_line_length(L) / M.EPS;
-        NOTE.time(`Using eps ${eps} from min line length ${
-            eps*M.EPS} (factor ${M.EPS})`);
+        NOTE.time(`Using eps ${eps} from min line length ${eps * M.EPS} (factor ${M.EPS})`);
         NOTE.time("Constructing points and segments from edges");
         const [P, SP, SE] = X.L_2_V_EV_EL(L, eps);
         NOTE.annotate(P, "points_coords");
@@ -256,7 +298,7 @@ const MAIN = {
         NOTE.annotate(SE, "segments_edges");
         NOTE.lap();
         NOTE.time("Constructing cells from segments");
-        const [PP,CP] = X.V_EV_2_VV_FV(P, SP);
+        const [PP, CP] = X.V_EV_2_VV_FV(P, SP);
         NOTE.annotate(CP, "cells_points");
         NOTE.lap();
         NOTE.time("Computing segments_cells");
@@ -269,8 +311,8 @@ const MAIN = {
         const BF = X.CF_2_BF(CF);
         NOTE.annotate(BF, "variables_faces");
         NOTE.lap();
-        const FOLD = {V, FV, EV, EF, FE, Ff, eps};
-        const CELL = {P, SP, SE, PP, CP, CS, SC, CF, FC, BF};
+        const FOLD = { V, FV, EV, EF, FE, Ff, eps };
+        const CELL = { P, SP, SE, PP, CP, CS, SC, CF, FC, BF };
         return [FOLD, CELL];
     },
     linearize: (edges, n) => {
@@ -334,4 +376,11 @@ const MAIN = {
         return layers;
     },
     FV_V_2_Ff: (FV, V) => FV.map(fV => (M.polygon_area2(fV.map(i => V[i])) < 0)),
+    putCD: (FOLD, CELL) => {
+        const edges = FOLD.FO.map(([f1, f2, o]) => {
+            return M.encode(((FOLD.Ff[f2] ? 1 : -1) * o >= 0) ? [f1, f2] : [f2, f1]);
+        });
+        CELL.CD = X.CF_edges_2_CD(CELL.CF, edges);
+        FOLD.EA = MAIN.EF_Ff_edges_2_EA(FOLD.EF, FOLD.Ff, edges);
+    },
 };
