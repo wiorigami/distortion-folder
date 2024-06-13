@@ -98,20 +98,20 @@ const MAIN = {
         document.getElementById("shadow").onchange = () => {
             MAIN.draw_frame(FILE);
         };
-        document.getElementById("topcolor").onchange = () => {
+        document.getElementById("topcolor").oninput = () => {
             MAIN.color.face.top = document.getElementById("topcolor").value
             MAIN.draw_frame(FILE);
         };
-        document.getElementById("bottomcolor").onchange = () => {
+        document.getElementById("bottomcolor").oninput = () => {
             MAIN.color.face.bottom = document.getElementById("bottomcolor").value
             MAIN.draw_frame(FILE);
         };
-        document.getElementById("scale").onchange = () => {
+        document.getElementById("scale").oninput = () => {
             const value = document.getElementById("scale").value
             MAIN.distortion.scale = 1 + (value - 0.5) * 0.2
             MAIN.draw_frame(FILE);
         };
-        document.getElementById("rotat").onchange = () => {
+        document.getElementById("rotat").oninput = () => {
             const value = document.getElementById("rotat").value
             MAIN.distortion.rotation = (value - 0.5) * 0.2 * Math.PI
             MAIN.draw_frame(FILE);
