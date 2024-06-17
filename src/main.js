@@ -6,13 +6,16 @@ import { X } from "./flatfolder/conversion.js";
 import { SOLVER } from "./flatfolder/solver.js";
 import { CON } from "./flatfolder/constraints.js";
 import { DIST } from "./distortion.js";
+import { SMPL } from "./sample_fold.js";
+
 window.onload = () => { MAIN.startup(); };  // entry point
 
 const MAIN = {
+    mode: "sample",
     color: {
         background: "lightgray",
         face: {
-            top: "#AAA",
+            top: "#3C4BAA",
             bottom: "#FFF",
         },
         edge: {
@@ -28,6 +31,8 @@ const MAIN = {
     distortion: {
         scale: 1,
         rotation: 0,
+        strength: 0.1,
+        eps: 1,
     },
     startup: () => {
         CON.build();
@@ -64,6 +69,9 @@ const MAIN = {
                 file_reader.readAsText(e.target.files[0]);
             }
         };
+        const e = { target: { result: SMPL.water_bomb } }
+        MAIN.process_file(e)
+        MAIN.mode = undefined
     },
     process_file: (e) => {
         NOTE.clear_log();
@@ -72,7 +80,7 @@ const MAIN = {
         const file_name = document.getElementById("import").value;
         const parts = file_name.split(".");
         const type = parts[parts.length - 1].toLowerCase();
-        if (type != "fold") {
+        if (type != "fold" && MAIN.mode != "sample") {
             console.log(`Found file with extension ${type}, FOLD format required`);
             return;
         }
@@ -106,17 +114,53 @@ const MAIN = {
             MAIN.color.face.bottom = document.getElementById("bottomcolor").value
             MAIN.draw_frame(FILE);
         };
+        document.getElementById("stren").oninput = () => {
+            const value = document.getElementById("stren").value
+            MAIN.distortion.strength = Math.pow(2, -1 / value)
+            MAIN.distortion.scale = 1 + (document.getElementById("scale").value - 0.5) * MAIN.distortion.strength
+            MAIN.distortion.rotation = (document.getElementById("rotat").value - 0.5) * MAIN.distortion.strength * Math.PI
+            MAIN.draw_frame(FILE);
+        };
         document.getElementById("scale").oninput = () => {
             const value = document.getElementById("scale").value
-            MAIN.distortion.scale = 1 + (value - 0.5) * 0.2
+            MAIN.distortion.scale = 1 + (value - 0.5) * MAIN.distortion.strength
             MAIN.draw_frame(FILE);
         };
         document.getElementById("rotat").oninput = () => {
             const value = document.getElementById("rotat").value
-            MAIN.distortion.rotation = (value - 0.5) * 0.2 * Math.PI
+            MAIN.distortion.rotation = (value - 0.5) * MAIN.distortion.strength * Math.PI
             MAIN.draw_frame(FILE);
         };
-
+        document.getElementById("reset-stren").onclick = () => {
+            document.getElementById("stren").value = 0.5
+            MAIN.distortion.strength = 0.1
+            MAIN.draw_frame(FILE);
+        }
+        document.getElementById("reset-scale").onclick = () => {
+            document.getElementById("scale").value = 0.5
+            MAIN.distortion.scale = 1
+            MAIN.draw_frame(FILE);
+        }
+        document.getElementById("reset-rotat").onclick = () => {
+            document.getElementById("rotat").value = 0.5
+            MAIN.distortion.rotation = 0
+            MAIN.draw_frame(FILE);
+        }
+        for (const i in [0, 1, 2, 3]) {
+            document.getElementById("T" + i).onchange = () => {
+                MAIN.draw_frame(FILE);
+            }
+        }
+        document.getElementById("eps").oninput = () => {
+            const value = document.getElementById("eps").value
+            MAIN.distortion.eps = Math.pow(2, -1 / (value) + 1)
+            MAIN.draw_frame(FILE);
+        };
+        document.getElementById("reset-eps").onclick = () => {
+            document.getElementById("eps").value = 0.5
+            MAIN.distortion.eps = 1
+            MAIN.draw_frame(FILE);
+        }
         // console.log(FILE);
     },
     get_frame: (FILE, i) => {
@@ -160,8 +204,52 @@ const MAIN = {
             const { V, FV, Vf } = F2
             const VD = Vf.map((vf, i) => { return M.add(V[i], M.sub(DIST.affine(vf, T), vf)) });
             const [FOLD_D, CELL_D] = MAIN.V_FV_2_FOLD_CELL(VD, FV)
+            document.getElementById("export").onclick = () => IO.write(FOLD_D)
 
-            FOLD_D.FO = F2.FO;
+
+            //Solving only with FULL Constraints
+            const { BF, SE, CF, SC, FC } = CELL_D
+            const BI_map = new Map();
+            for (const [i, k] of BF.entries()) {
+                BI_map.set(k, i);
+            }
+            const BA0 = BF.map(() => 0);
+            for (const [i, [f1, f2, o]] of F2.FO.entries()) {
+                const k = M.encode_order_pair([f1, f2]);
+                const [f1_0, f2_0] = M.decode(k);
+                const o_0 = f1_0 == f1 ? 1 : 2;
+                const bi = BI_map.get(k)
+                BA0[bi] = o_0;
+            }
+            const BT3 = X.FC_CF_BF_2_BT3(FC, CF, BF);
+
+            NOTE.time("Computing edge-edge overlaps");
+            const ExE = X.SE_2_ExE(SE);
+            NOTE.count(ExE, "edge-edge adjacencies");
+            NOTE.lap();
+            NOTE.time("Computing edge-face overlaps");
+            const ExF = X.SE_CF_SC_2_ExF(SE, CF, SC);
+            NOTE.count(ExF, "edge-face adjacencies");
+            NOTE.lap();
+            const [BT0, BT1, BT2] = X.BF_EF_ExE_ExF_BT3_2_BT0_BT1_BT2(BF, FOLD_D.EF, ExE, ExF, BT3);
+            NOTE.count(BT0, "taco-taco", 6);
+            NOTE.count(BT1, "taco-tortilla", 3);
+            NOTE.count(BT2, "tortilla-tortilla", 2);
+            NOTE.count(BT3, "independent transitivity", 3);
+            const c = [0, 1, 2, 3].map((i) => { return document.getElementById("T" + i).checked })
+            const BT = BF.map((F, i) => [c[0] ? BT0[i] : [], c[1] ? BT1[i] : [], c[2] ? BT2[i] : [], c[3] ? BT3[i] : []]);
+            // const BT = BF.map((F, i) => [[], [], [], BT3[i]]);
+
+            const sol = SOLVER.solve(BF, BT, BA0, 1);
+            if (sol.length == 3) { // solve found unsatisfiable constraint
+                NOTE.log("Solver: No solutions found.")
+                return;
+            } // solve completed
+            const [GB, GA] = sol;
+            const GI = GB.map(() => 0);// take the first solution
+
+            //Inferring FO
+            FOLD_D.FO = X.edges_Ff_2_FO(X.BF_GB_GA_GI_2_edges(BF, GB, GA, GI), F2.Ff)
             MAIN.putCD(FOLD_D, CELL_D);
             MAIN.draw_state(out, FOLD_D, CELL_D);
 
@@ -289,7 +377,7 @@ const MAIN = {
         const EV = Array.from(EV_set).sort().map(k => M.decode(k));
         const [EF, FE] = X.EV_FV_2_EF_FE(EV, FV);
         const L = EV.map(vs => vs.map(i => V[i]));
-        const eps = M.min_line_length(L) / M.EPS;
+        const eps = M.min_line_length(L) / M.EPS * MAIN.distortion.eps;
         NOTE.time(`Using eps ${eps} from min line length ${eps * M.EPS} (factor ${M.EPS})`);
         NOTE.time("Constructing points and segments from edges");
         const [P, SP, SE] = X.L_2_V_EV_EL(L, eps);
