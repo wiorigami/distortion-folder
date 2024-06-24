@@ -53,7 +53,7 @@ Some input are not consisitent with fully valid constraints (check more for [Fla
 
 - The parametrization is gives as following:
 
-    $A=(1 + 2^{1/\epsilon}\cdot(s-1/2))\cdot R(\pi\cdot 2^{1/\epsilon}\cdot(\theta-1/2)).$
+    $A=(1 + 2^{-1/\epsilon}\cdot(s- \frac{1}{2}))\cdot R(\pi\cdot 2^{-1/\epsilon}\cdot(\theta-\frac{1}{2})).$
     - $\epsilon \in (0,1]$ : the strength parameter.
     - $s\in (0,1]$ : the scale parameter.
     - $\theta\in [0,1]$ : the rotation parameter.
