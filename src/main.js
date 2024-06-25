@@ -4,13 +4,14 @@ import { SVG } from "./flatfolder/svg.js";
 import { IO } from "./flatfolder/io.js";
 import { X } from "./flatfolder/conversion.js";
 import { CON } from "./flatfolder/constraints.js";
+import { SOLVER } from "./flatfolder/solver.js";
 import { DIST } from "./distortion.js";
 import { SMPL } from "./sample_fold.js";
 
 window.onload = () => { MAIN.startup(); };  // entry point
 
 const MAIN = {
-    mode: "sample",
+
     color: {
         background: "lightgray",
         face: {
@@ -65,7 +66,6 @@ const MAIN = {
         };
         const e = { target: { result: SMPL.water_bomb } }
         MAIN.process_file(e)
-        MAIN.mode = undefined
     },
     process_file: (e) => {
         NOTE.clear_log();
@@ -74,12 +74,13 @@ const MAIN = {
         const file_name = document.getElementById("import").value;
         const parts = file_name.split(".");
         const type = parts[parts.length - 1].toLowerCase();
-        if (type != "fold" && MAIN.mode != "sample") {
-            console.log(`Found file with extension ${type}, FOLD format required`);
+        if (type != "fold" && type != "cp" && file_name != "") {
+            NOTE.log(`Found file with extension ${type}, FOLD/CP format required`);
             return;
         }
         NOTE.time(`Importing from file ${file_name}`);
-        const FILE = JSON.parse(doc);
+        var FILE = (type == "cp") ? MAIN.CP_2_FILE(doc, type) : JSON.parse(doc);
+
         if ((FILE.file_frames == undefined) || (FILE.file_frames.length < 2)) {
             console.log("File does not have at least 2 FOLD frames to sequence");
             FILE.file_frames = [FILE, FILE]
@@ -313,10 +314,10 @@ const MAIN = {
         const EV = Array.from(EV_set).sort().map(k => M.decode(k));
         const [EF, FE] = X.EV_FV_2_EF_FE(EV, FV);
         const L = EV.map(vs => vs.map(i => V[i]));
-        const eps = M.min_line_length(L) / M.EPS * DIST.eps;
-        NOTE.time(`Using eps ${eps} from min line length ${eps * M.EPS} (factor ${M.EPS})`);
         NOTE.time("Constructing points and segments from edges");
-        const [P, SP, SE] = X.L_2_V_EV_EL(L, eps);
+        const [P, SP, SE, eps_i] = X.L_2_V_EV_EL(L);
+        const eps = M.min_line_length(L) / (2 ** eps_i) * DIST.eps;
+        NOTE.time(`Used eps: ${2 ** eps_i} | ${eps}`);
         NOTE.annotate(P, "points_coords");
         NOTE.annotate(SP, "segments_points");
         NOTE.annotate(SE, "segments_edges");
@@ -406,5 +407,58 @@ const MAIN = {
         });
         CELL.CD = X.CF_edges_2_CD(CELL.CF, edges);
         FOLD.EA = MAIN.EF_Ff_edges_2_EA(FOLD.EF, FOLD.Ff, edges);
+    },
+
+    CP_2_FILE: (doc, type) => {
+        const [V, VV, EV, EA, EF, FV, FE] =
+            IO.doc_type_2_V_VV_EV_EA_EF_FV_FE(doc, type);
+        if (V == undefined) { return; }
+        const VK = X.V_VV_EV_EA_2_VK(V, VV, EV, EA);
+        const [Vf, Ff] = X.V_FV_EV_EA_2_Vf_Ff(V, FV, EV, EA);
+        const Vf_norm = M.normalize_points(Vf);
+        const FOLD = { V, Vf, Vf_norm, VK, EV, EA, EF, FV, FE, Ff };
+
+        const L = EV.map((P) => M.expand(P, Vf));
+        const [P, SP, SE, eps_i] = X.L_2_V_EV_EL(L);
+        FOLD.eps = M.min_line_length(L) / (2 ** eps_i);
+        const [, CP] = X.V_EV_2_VV_FV(P, SP);
+        const [SC, CS] = X.EV_FV_2_EF_FE(SP, CP);
+        const [CF, FC] = X.EF_FV_SP_SE_CP_SC_2_CF_FC(EF, FV, SP, SE, CP, SC);
+        const ExE = X.SE_2_ExE(SE);
+        const ExF = X.SE_CF_SC_2_ExF(SE, CF, SC);
+        const BF = X.CF_2_BF(CF);
+        const BT3 = X.FC_CF_BF_2_BT3(FC, CF, BF);
+        const [BT0, BT1, BT2] = X.BF_EF_ExE_ExF_BT3_2_BT0_BT1_BT2(BF, EF, ExE, ExF, BT3);
+        const BT = BF.map((F, i) => [BT0[i], BT1[i], BT2[i], BT3[i]]);
+        const BA0 = X.EF_EA_Ff_BF_2_BA0(EF, EA, Ff, BF);
+        const sol = SOLVER.solve(BF, BT, BA0, 1);
+        if (sol.length == 3) { // solve found unsatisfiable constraint
+            NOTE.log("no valid state found");
+            return;
+        } // solve completed
+        const [GB, GA] = sol;
+        const n = (GA == undefined) ? 0 : GA.reduce((s, A) => {
+            return s * BigInt(A.length);
+        }, BigInt(1));
+        NOTE.count(n, "folded states");
+        if (n > 0) {
+            const GI = GB.map(() => 0);
+            NOTE.time("Computing state");
+            const edges = X.BF_GB_GA_GI_2_edges(BF, GB, GA, GI);
+            FOLD.FO = X.edges_Ff_2_FO(edges, Ff);
+        }
+        const path = document.getElementById("import").value.split("\\");
+        const name = path[path.length - 1].split(".")[0];
+        return {
+            file_spec: 1.1,
+            file_creator: "flat-folder",
+            file_title: `${name}_state`,
+            file_classes: ["singleModel"],
+            vertices_coords: Vf,
+            edges_vertices: EV,
+            edges_assignment: EA,
+            faces_vertices: FV,
+            faceOrders: FOLD.FO,
+        };
     },
 };
