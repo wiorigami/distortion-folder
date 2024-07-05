@@ -105,15 +105,15 @@ export const DIST = {    // STATE DISTORTER
         });
         const ex = SVG.clear("export");
         for (const [type, ext] of [
-            ["dist", "fold"],
-            ["dist", "svg"],
+            ["fold", "fold"],
+            ["svg", "svg"],
             ["log", "txt"]
         ]) {
             const link = document.createElement("a");
             const button = document.createElement("input");
             ex.appendChild(link);
             link.appendChild(button);
-            link.setAttribute("download", `${name}_${type}.${ext}`);
+            link.setAttribute("download", `${name}_dist.${ext}`);
             link.setAttribute("href", window.URL.createObjectURL(data[type]));
             button.setAttribute("type", "button");
             button.setAttribute("value", type);
